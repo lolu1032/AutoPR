@@ -11,6 +11,7 @@ spring:
             scope:
               - read:user
               - user:email
+              - repo
         provider:
           github:
             authorization-uri: https://github.com/login/oauth/authorize

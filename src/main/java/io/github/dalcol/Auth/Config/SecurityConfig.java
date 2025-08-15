@@ -1,5 +1,6 @@
 package io.github.dalcol.Auth.Config;
 
+import io.github.dalcol.Auth.handler.CustomOAuth2SuccessHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,6 +13,12 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
     @Value("${spring.frontend.url}")
     private String baseUrl;
+
+    private final CustomOAuth2SuccessHandler customOAuth2SuccessHandler;
+
+    public SecurityConfig(CustomOAuth2SuccessHandler customOAuth2SuccessHandler) {
+        this.customOAuth2SuccessHandler = customOAuth2SuccessHandler;
+    }
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -22,7 +29,7 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
-                        .defaultSuccessUrl(baseUrl + "/", true)
+                        .successHandler(customOAuth2SuccessHandler)
                 )
                 .logout(logout -> logout
                         .logoutUrl("/logout")
