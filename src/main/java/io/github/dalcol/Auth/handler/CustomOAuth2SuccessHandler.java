@@ -24,7 +24,6 @@ public class CustomOAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHa
         this.clientService = clientService;
     }
 
-
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
                                         Authentication authentication) throws IOException, ServletException {
@@ -36,8 +35,6 @@ public class CustomOAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHa
         );
 
         String accessToken = client.getAccessToken().getTokenValue();
-
-        System.out.println(accessToken);
 
         request.getSession().setAttribute("access_token", accessToken);
 
