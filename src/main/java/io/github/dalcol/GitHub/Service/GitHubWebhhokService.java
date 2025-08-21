@@ -1,12 +1,10 @@
 package io.github.dalcol.GitHub.Service;
 
+import io.github.dalcol.GitHub.Service.Common.CommonGitHubApiClient;
 import io.github.dalcol.GitHub.dto.PullRequestRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -20,33 +18,22 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class GitHubWebhhokService {
 
-    private final OAuth2AuthorizedClientService authorizedClientService;
+    private final GitHubJwtService jwtService;
+    private final InstallationTokenService installationTokenService;
     private final String BASEURL = "https://api.github.com";
+    private final CommonGitHubApiClient commonGitHubApiClient;
 
     public ResponseEntity<Object> registerWebhook(
             Authentication authentication,
             String owner,
             String repo
     ) {
-        OAuth2AuthenticationToken oauthToken = (OAuth2AuthenticationToken) authentication;
-        OAuth2AuthorizedClient client = authorizedClientService.loadAuthorizedClient(
-                oauthToken.getAuthorizedClientRegistrationId(),
-                oauthToken.getName()
-        );
-
-        String accessToken = client.getAccessToken().getTokenValue();
-
-        RestTemplate restTemplate = new RestTemplate();
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(accessToken);
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Accept", "application/vnd.github+json");
 
         String secret = generateSecretKey();
         System.out.println("Generated Webhook secret: " + secret);
 
         Map<String, Object> config = new HashMap<>();
-        config.put("url", "https://f46bb24c8aaf.ngrok-free.app/api/webhook/github");
+        config.put("url", " https://9b350ca7253e.ngrok-free.app/api/webhook/github");
         config.put("content_type", "json");
         config.put("secret", secret);
         config.put("insecure_ssl", "0");
@@ -57,20 +44,38 @@ public class GitHubWebhhokService {
         body.put("events", List.of("push"));
         body.put("config", config);
 
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-
         String url = BASEURL + "/repos/" + owner + "/" + repo + "/hooks";
 
-        ResponseEntity<Object> response = restTemplate.exchange(
-                url,
-                HttpMethod.POST,
-                entity,
-                Object.class
+        return commonGitHubApiClient.githubPostApi(authentication,body,url);
+    }
+    public void handlePushEvent(Map<String, Object> payload) throws Exception {
+        Map<String, Object> repository = (Map<String, Object>) payload.get("repository");
+        String owner = ((Map<String, String>) repository.get("owner")).get("login");
+        String repo = (String) repository.get("name");
+        String defaultBranch = (String) repository.get("default_branch");
+
+        String branch = extractBranch(payload);
+
+        // installation_id 가져오기
+        Map<String, Object> installation = (Map<String, Object>) payload.get("installation");
+        String installationId;
+        if (installation != null && installation.get("id") != null) {
+            installationId = String.valueOf(installation.get("id"));
+        } else {
+            installationId = fetchInstallationId(owner);
+        }
+
+        String installationToken = installationTokenService.createInstallationToken(installationId);
+
+        PullRequestRequest prRequest = new PullRequestRequest(
+                "[Auto PR] " + branch + " -> " + defaultBranch,
+                "자동 생성된 Pull Request 입니다.",
+                branch,
+                defaultBranch
         );
 
-        return ResponseEntity.status(response.getStatusCode()).body(response.getBody());
+        createPullRequest(installationToken, owner, repo, prRequest);
     }
-
     public ResponseEntity<Object> createPullRequest(
             String token,
             String owner,
@@ -83,7 +88,6 @@ public class GitHubWebhhokService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("Accept", "application/vnd.github+json");
 
-        // 1️⃣ 먼저 PR 있는지 확인
         String checkUrl = BASEURL + "/repos/" + owner + "/" + repo + "/pulls?head=" + owner + ":" + request.getHead()
                 + "&base=" + request.getBase();
         ResponseEntity<Object[]> existingPrs = restTemplate.exchange(
@@ -98,7 +102,6 @@ public class GitHubWebhhokService {
             return ResponseEntity.ok("이미 PR이 존재합니다.");
         }
 
-        // 2️⃣ PR 생성
         Map<String, Object> body = new HashMap<>();
         body.put("title", request.getTitle());
         body.put("body", request.getBody());
@@ -115,6 +118,40 @@ public class GitHubWebhhokService {
         System.out.println("PR 생성 결과: " + response.getStatusCode());
 
         return ResponseEntity.status(response.getStatusCode()).body(response.getBody());
+    }
+
+    private String extractBranch(Map<String, Object> payload) {
+        Object refObj = payload.get("ref");
+        if (refObj == null) throw new IllegalArgumentException("No branch info in payload");
+        return ((String) refObj).replace("refs/heads/", "");
+    }
+
+    private String fetchInstallationId(String owner) throws Exception {
+        String jwt = jwtService.generateJwtToken();
+        RestTemplate restTemplate = new RestTemplate();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(jwt);
+        headers.setAccept(MediaType.parseMediaTypes("application/vnd.github+json"));
+
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        ResponseEntity<Map[]> response = restTemplate.exchange(
+                // 나중에 이런 api들 모아둔 파일 만들어서 사용하면될듯 enum으로?
+                "https://api.github.com/app/installations",
+                HttpMethod.GET,
+                entity,
+                Map[].class
+        );
+
+        // owner에 맞는 installation 찾기
+        for (Map<String, Object> inst : response.getBody()) {
+            Map<String, String> account = (Map<String, String>) inst.get("account");
+            if (account.get("login").equals(owner)) {
+                return String.valueOf(inst.get("id"));
+            }
+        }
+
+        throw new RuntimeException("설치된 App을 찾을 수 없습니다: " + owner);
     }
 
     private String generateSecretKey() {
