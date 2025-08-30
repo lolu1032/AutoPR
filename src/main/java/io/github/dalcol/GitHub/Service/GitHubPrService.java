@@ -3,6 +3,7 @@ package io.github.dalcol.GitHub.Service;
 import io.github.dalcol.GitHub.dto.ChangedFile;
 import io.github.dalcol.GitHub.dto.PullRequestRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -12,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GitHubPrService {
@@ -133,51 +135,80 @@ public class GitHubPrService {
      * Sonar을 통해 코드 리뷰
      */
     private String getSonarCloudReport(String projectKey, String sonarToken, String branch, List<ChangedFile> changedFiles) {
-        String apiUrl = "https://sonarcloud.io/api/issues/search?componentKeys=" + projectKey +
-                "&resolved=false&branch=" + branch;
+        try {
+            log.info("[LOG] SonarCloud Report 조회 시작");
+            log.info("[LOG] projectKey: {}, branch: {}", projectKey, branch);
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBasicAuth(sonarToken, "");
-        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+            String apiUrl = "https://sonarcloud.io/api/issues/search?componentKeys=" + projectKey +
+                    "&resolved=false&branch=" + branch;
+            log.info("[LOG] API URL: {}", apiUrl);
 
-        HttpEntity<Void> entity = new HttpEntity<>(headers);
-        ResponseEntity<Map> response = restTemplate.exchange(apiUrl, HttpMethod.GET, entity, Map.class);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBasicAuth(sonarToken, "");
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
 
-        if (!response.getStatusCode().is2xxSuccessful()) {
-            throw new RuntimeException("SonarCloud API 호출 실패: " + response.getStatusCode());
-        }
+            log.info("[LOG] Authorization 헤더: {}", headers.getFirst(HttpHeaders.AUTHORIZATION));
 
-        Map<String, Object> body = response.getBody();
-        List<Map<String, Object>> issues = (List<Map<String, Object>>) body.get("issues");
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-        // PR 변경 파일만 필터링
-        Set<String> changedFilePaths = changedFiles.stream()
-                .map(ChangedFile::getFilename)
-                .collect(Collectors.toSet());
+            ResponseEntity<Map> response = restTemplate.exchange(apiUrl, HttpMethod.GET, entity, Map.class);
+            log.info("[LOG] HTTP 상태 코드: {}", response.getStatusCode());
 
-        StringBuilder report = new StringBuilder();
-        for (Map<String, Object> issue : issues) {
-            String type = (String) issue.get("type");
-            String component = (String) issue.get("component");
-            String message = (String) issue.get("message");
-            String severity = (String) issue.get("severity");
-
-            if ((type.equals("CODE_SMELL") || type.equals("BUG") || type.equals("VULNERABILITY"))
-                    && component.contains("src/main/java")) {
-
-                String filePath = component.split(":", 2)[1];
-
-                if (!changedFilePaths.contains(filePath)) continue; // 변경 파일만
-
-                report.append("[").append(severity).append("] ")
-                        .append(filePath).append(": ")
-                        .append(message)
-                        .append("\n");
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                log.info("[LOG] 응답 바디: {}", response.getBody());
+                throw new RuntimeException("SonarCloud API 호출 실패: " + response.getStatusCode());
             }
-        }
 
-        return report.toString();
+            Map<String, Object> body = response.getBody();
+            if (body == null) {
+                log.info("[LOG] 응답 바디가 null입니다.");
+                return "";
+            }
+
+            List<Map<String, Object>> issues = (List<Map<String, Object>>) body.get("issues");
+            log.info("[LOG] 전체 이슈 개수: {}", issues != null ? issues.size() : 0);
+
+            // PR 변경 파일만 필터링
+            Set<String> changedFilePaths = changedFiles.stream()
+                    .map(ChangedFile::getFilename)
+                    .collect(Collectors.toSet());
+            log.info("[LOG] 변경 파일 목록: {}", changedFilePaths);
+
+            StringBuilder report = new StringBuilder();
+            if (issues != null) {
+                for (Map<String, Object> issue : issues) {
+                    String type = (String) issue.get("type");
+                    String component = (String) issue.get("component");
+                    String message = (String) issue.get("message");
+                    String severity = (String) issue.get("severity");
+
+                    if ((type.equals("CODE_SMELL") || type.equals("BUG") || type.equals("VULNERABILITY"))
+                            && component.contains("src/main/java")) {
+
+                        String filePath = component.split(":", 2)[1];
+                        log.info("[LOG] 이슈 파일: {}, severity: {}, message: {}", filePath, severity, message);
+
+                        if (!changedFilePaths.contains(filePath)) {
+                            log.info("[LOG] 변경 파일 아님, 스킵: {}", filePath);
+                            continue; // 변경 파일만
+                        }
+
+                        report.append("[").append(severity).append("] ")
+                                .append(filePath).append(": ")
+                                .append(message)
+                                .append("\n");
+                    }
+                }
+            }
+
+            log.info("[LOG] 최종 필터링 결과:\n{}", report);
+            return report.toString();
+        } catch (Exception e) {
+            log.error("[LOG] 예외 발생", e);
+            return "";
+        }
     }
+
 
 
 }
