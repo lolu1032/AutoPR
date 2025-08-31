@@ -34,7 +34,7 @@ public class GitHubWebhokService {
         System.out.println("Generated Webhook secret: " + secret);
 
         Map<String, Object> config = new HashMap<>();
-        config.put("url", "https://5ca50bdcb583.ngrok-free.app/api/webhook/github");
+        config.put("url", "https://db8de4bc4750.ngrok-free.app/api/webhook/github");
         config.put("content_type", "json");
         config.put("secret", secret);
         config.put("insecure_ssl", "0");
@@ -62,6 +62,9 @@ public class GitHubWebhokService {
         String branch = extractBranch(payload);
         log.info(branch + " branch");
 
+        String sonarBranch = extractSonarBranch(payload);
+        log.info(sonarBranch + " sonarBranch");
+
         String installationId = payload.installation() != null ? payload.installation().id() : fetchInstallationId(owner);
 
         List<ChangedFile> changedFiles = fetchChangedFiles(owner, repo, defaultBranch, branch, installationId);
@@ -77,7 +80,8 @@ public class GitHubWebhokService {
                 defaultBranch,
                 changedFiles,
                 sonarProjectKey,
-                sonarToken
+                sonarToken,
+                sonarBranch
         );
     }
 
@@ -85,6 +89,18 @@ public class GitHubWebhokService {
         String refObj = payload.ref();
         if (refObj == null) throw new IllegalArgumentException("No branch info in payload");
         return refObj.replace("refs/heads/", "");
+    }
+
+    private String extractSonarBranch(Payload payload) {
+        String refObj = payload.ref();
+        if (refObj == null) throw new IllegalArgumentException("No branch info in payload");
+
+        String branchName = refObj.replace("refs/heads/", "");
+        if(branchName.contains("/")) {
+            return branchName.split("/")[0]; // 앞부분만
+        } else {
+            return branchName;
+        }
     }
 
     private List<ChangedFile> fetchChangedFiles(String owner, String repo, String base, String head, String installationId) throws Exception {

@@ -28,7 +28,7 @@ public class GitHubPrService {
                                           String sourceBranch, String targetBranch,
                                           List<ChangedFile> changedFiles,
                                           String sonarProjectKey,
-                                          String sonarToken) throws Exception {
+                                          String sonarToken,String sonarBranch) throws Exception {
 
         // 1. Installation Token 발급
         String token = installationTokenService.createInstallationToken(installationId);
@@ -36,7 +36,7 @@ public class GitHubPrService {
         // 2. SonarCloud 분석 결과 가져오기 (변경 파일 기준)
         String sonarReport = "";
         try {
-            sonarReport = getSonarCloudReport(sonarProjectKey, sonarToken, sourceBranch, changedFiles);
+            sonarReport = getSonarCloudReport(sonarProjectKey, sonarToken, sonarBranch, changedFiles);
         } catch (Exception e) {
             System.out.println("SonarCloud 분석 실패: " + e.getMessage());
             // PR 생성은 계속 진행
