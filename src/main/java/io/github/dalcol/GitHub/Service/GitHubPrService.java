@@ -2,6 +2,7 @@ package io.github.dalcol.GitHub.Service;
 
 import io.github.dalcol.GitHub.dto.ChangedFile;
 import io.github.dalcol.GitHub.dto.PullRequestRequest;
+import io.github.dalcol.GitHub.dto.WebHookDto.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
@@ -72,28 +73,29 @@ public class GitHubPrService {
             );
 
             HttpEntity<PullRequestRequest> entity = new HttpEntity<>(prRequest, headers);
-            ResponseEntity<Map> response = restTemplate.exchange(
+            ResponseEntity<PullRequestResponse> response = restTemplate.exchange(
                     "https://api.github.com/repos/" + owner + "/" + repo + "/pulls",
                     HttpMethod.POST,
                     entity,
-                    Map.class
+                    PullRequestResponse.class
             );
 
-            if (response.getStatusCode().is2xxSuccessful()) {
-                System.out.println("PR 생성 성공: " + response.getBody().get("html_url"));
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                PullRequestResponse prResponse = response.getBody();
+                System.out.println("PR 생성 성공: " + prResponse.html_url());
             } else {
-                System.out.println("PR 생성 실패: " + response.getBody());
+                System.out.println("PR 생성 실패: " + response);
             }
 
         } else {
             Map<String, String> updateBody = Map.of("body", prBody.toString());
             HttpEntity<Map<String, String>> entity = new HttpEntity<>(updateBody, headers);
 
-            ResponseEntity<Map> response = restTemplate.exchange(
+            ResponseEntity<PullRequestResponse> response = restTemplate.exchange(
                     "https://api.github.com/repos/" + owner + "/" + repo + "/pulls/" + prNumber,
                     HttpMethod.PATCH,
                     entity,
-                    Map.class
+                    PullRequestResponse.class
             );
 
             if (response.getStatusCode().is2xxSuccessful()) {
@@ -107,28 +109,24 @@ public class GitHubPrService {
     private Integer findExistingPr(String installationId, String owner, String repo,
                                    String sourceBranch, String targetBranch) throws Exception {
 
-        // 1. 설치 토큰 발급
         String token = installationTokenService.createInstallationToken(installationId);
 
-        // 2. 헤더 설정
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
         HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-        // 3. API 호출
         String url = "https://api.github.com/repos/" + owner + "/" + repo + "/pulls" +
                 "?head=" + owner + ":" + sourceBranch + "&base=" + targetBranch + "&state=open";
 
         RestTemplate restTemplate = new RestTemplate();
-        ResponseEntity<List> response = restTemplate.exchange(url, HttpMethod.GET, entity, List.class);
+        ResponseEntity<PullReqeustInfo[]> response = restTemplate.exchange(url, HttpMethod.GET, entity, PullReqeustInfo[].class);
 
-        List<Map<String, Object>> prs = response.getBody();
-        if (prs != null && !prs.isEmpty()) {
-            // 첫 번째 열린 PR 번호 반환
-            return (Integer) prs.get(0).get("number");
+        PullReqeustInfo[] prs = response.getBody();
+        if (prs != null && prs.length > 0) {
+            return prs[0].number();
         }
-        return null; // PR 없음
+        return null;
     }
 
     /**
@@ -151,7 +149,7 @@ public class GitHubPrService {
 
             HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-            ResponseEntity<Map> response = restTemplate.exchange(apiUrl, HttpMethod.GET, entity, Map.class);
+            ResponseEntity<SonarIssueResponse> response = restTemplate.exchange(apiUrl, HttpMethod.GET, entity, SonarIssueResponse.class);
             log.info("[LOG] HTTP 상태 코드: {}", response.getStatusCode());
 
             if (!response.getStatusCode().is2xxSuccessful()) {
@@ -159,13 +157,13 @@ public class GitHubPrService {
                 throw new RuntimeException("SonarCloud API 호출 실패: " + response.getStatusCode());
             }
 
-            Map<String, Object> body = response.getBody();
+            SonarIssueResponse body = response.getBody();
             if (body == null) {
                 log.info("[LOG] 응답 바디가 null입니다.");
                 return "";
             }
 
-            List<Map<String, Object>> issues = (List<Map<String, Object>>) body.get("issues");
+            List<Issue> issues = body.issues();
             log.info("[LOG] 전체 이슈 개수: {}", issues != null ? issues.size() : 0);
 
             // PR 변경 파일만 필터링
@@ -176,11 +174,11 @@ public class GitHubPrService {
 
             StringBuilder report = new StringBuilder();
             if (issues != null) {
-                for (Map<String, Object> issue : issues) {
-                    String type = (String) issue.get("type");
-                    String component = (String) issue.get("component");
-                    String message = (String) issue.get("message");
-                    String severity = (String) issue.get("severity");
+                for (Issue  issue : issues) {
+                    String type = issue.type();
+                    String component = issue.component();
+                    String message = issue.message();
+                    String severity = issue.severity();
 
                     if ((type.equals("CODE_SMELL") || type.equals("BUG") || type.equals("VULNERABILITY"))
                             && component.contains("src/main/java")) {

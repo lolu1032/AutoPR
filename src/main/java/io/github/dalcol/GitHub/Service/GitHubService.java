@@ -16,12 +16,10 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class GitHubService {
-    private final String BASEURL = "https://api.github.com";
+    final String BASEURL = "https://api.github.com";
     private final CommonGitHubApiClient commonGitHubApiClient;
     /**
      * Repo READ
-     * @param authentication
-     * @return
      */
     public ResponseEntity<List> getUserRepos(Authentication authentication) {
         String url = "/user/repos";
@@ -30,10 +28,6 @@ public class GitHubService {
 
     /**
      * PR READ
-     * @param authentication
-     * @param owner
-     * @param repo
-     * @return
      */
     public ResponseEntity<List> getRepoPulls(
             Authentication authentication,
@@ -46,11 +40,6 @@ public class GitHubService {
 
     /**
      * PR CREATE
-     * @param authentication
-     * @param owner
-     * @param repo
-     * @param request
-     * @return
      */
     public ResponseEntity<Object> createPullRequest(
             Authentication authentication,
@@ -67,15 +56,6 @@ public class GitHubService {
         body.put("base", request.getBase());
 
         return commonGitHubApiClient.githubPostApi(authentication,body,url);
-//        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, commonGitHubApiClient.header(authentication));
-//        ResponseEntity<Object> response = restTemplate.exchange(
-//                url,
-//                HttpMethod.POST,
-//                entity,
-//                Object.class
-//        );
-//
-//        return ResponseEntity.status(response.getStatusCode()).body(response.getBody());
     }
 
 }

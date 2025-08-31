@@ -55,5 +55,39 @@ public class WebHookDto {
     ) {
 
     }
+    @Builder
+    public record PullReqeustInfo (
+            Integer number,
+            String state
+    ){
+
+    }
+    @Builder
+    public record SonarIssueResponse(
+            List<Issue> issues,
+            Integer total
+    ) {
+    }
+
+    @Builder
+    public record Issue(
+            String key,
+            String rule,
+            String severity,
+            String component,
+            String project,
+            Integer line,
+            String message,
+            String type
+    ) {
+    }
+    public record PullRequestResponse(
+            Long id,
+            Integer number,
+            String state,
+            String title,
+            String body,
+            String html_url
+    ) {}
 }
 
